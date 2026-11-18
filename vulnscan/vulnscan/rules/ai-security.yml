@@ -1,0 +1,216 @@
+# Custom Semgrep rules for AI / LLM application risks (OWASP Top 10 for LLM Applications 2025).
+# Bundled with vulnscan and always run, even offline.
+rules:
+  # ---------------------------------------------------------------- LLM05 Improper Output Handling
+  - id: llm-output-to-code-exec
+    languages: [python]
+    severity: ERROR
+    message: >-
+      LLM output flows into eval/exec/subprocess. A prompt-injected model can make the application execute
+      arbitrary code. Never execute model output; use a strict allow-list of actions instead.
+    metadata:
+      title: LLM output executed as code or shell command
+      cwe: ["CWE-94: Improper Control of Generation of Code"]
+      owasp_llm: ["LLM05:2025", "LLM06:2025"]
+      confidence: MEDIUM
+      category_override: ai
+    mode: taint
+    pattern-sources:
+      - pattern: $C.chat.completions.create(...)
+      - pattern: $C.messages.create(...)
+      - pattern: $C.invoke(...)
+      - pattern: $C.predict(...)
+      - pattern: $C.generate_content(...)
+      - pattern: ollama.chat(...)
+      - patterns:
+          - pattern: $CHAIN.run(...)
+          - metavariable-regex:
+              metavariable: $CHAIN
+              regex: (?i).*(chain|llm|agent|model|bot).*
+    pattern-sinks:
+      - pattern: eval(...)
+      - pattern: exec(...)
+      - pattern: os.system(...)
+      - pattern: subprocess.$F(..., shell=True, ...)
+      - pattern: subprocess.$F(...)
+
+  - id: llm-output-to-sql
+    languages: [python]
+    severity: ERROR
+    message: >-
+      LLM output is used to build a SQL statement. A manipulated model can run arbitrary queries.
+      Use parameterised queries and a read-only, least-privilege database role for any LLM-generated SQL.
+    metadata:
+      title: LLM output used in SQL query
+      cwe: ["CWE-89: SQL Injection"]
+      owasp_llm: ["LLM05:2025"]
+      confidence: MEDIUM
+      category_override: ai
+    mode: taint
+    pattern-sources:
+      - pattern: $C.chat.completions.create(...)
+      - pattern: $C.messages.create(...)
+      - pattern: $C.invoke(...)
+      - pattern: ollama.chat(...)
+    pattern-sinks:
+      - pattern: $CUR.execute($Q, ...)
+      - pattern: $DB.execute($Q, ...)
+      - pattern: text($Q)
+
+  - id: llm-output-to-html-js
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: >-
+      Model output is written into the DOM as HTML. If the model is prompt-injected this becomes XSS.
+      Render model output as text, or sanitise it (e.g. DOMPurify) before inserting.
+    metadata:
+      title: LLM output rendered as raw HTML
+      cwe: ["CWE-79: Cross-site Scripting"]
+      owasp_llm: ["LLM05:2025"]
+      confidence: LOW
+      category_override: ai
+    pattern-either:
+      - pattern: $EL.innerHTML = $X.choices[$I].message.content
+      - pattern: $EL.innerHTML = $X.content[$I].text
+      - pattern: $EL.innerHTML = $REPLY
+      - pattern: '<div dangerouslySetInnerHTML={{__html: $X}} />'
+    paths:
+      include: ["*chat*", "*assistant*", "*llm*", "*bot*", "*ai*", "*message*"]
+
+  # ---------------------------------------------------------------- LLM01 Prompt Injection
+  - id: llm-prompt-built-from-request
+    languages: [python]
+    severity: WARNING
+    message: >-
+      Untrusted request data is formatted directly into a system/instruction prompt. Keep user input in the
+      'user' role, delimit it clearly, and screen it with a prompt-injection classifier.
+    metadata:
+      title: User input concatenated into LLM instructions
+      cwe: ["CWE-1427: Improper Neutralization of Input Used for LLM Prompting"]
+      owasp_llm: ["LLM01:2025"]
+      confidence: LOW
+      category_override: ai
+    mode: taint
+    pattern-sources:
+      - pattern: request.$ATTR
+      - pattern: request.$ATTR[...]
+      - pattern: request.$ATTR.get(...)
+      - pattern: input(...)
+    pattern-sinks:
+      - pattern: '{"role": "system", "content": $X}'
+      - pattern: SystemMessage(content=$X)
+      - pattern: PromptTemplate.from_template($X)
+      - pattern: '$C.messages.create(..., system=$X, ...)'
+
+  # ---------------------------------------------------------------- LLM03 / LLM04 Supply chain & poisoning
+  - id: hf-trust-remote-code
+    languages: [python]
+    severity: ERROR
+    message: >-
+      trust_remote_code=True executes Python code shipped inside the model repository. Pin a reviewed
+      revision (revision="<commit sha>") or avoid remote code entirely.
+    metadata:
+      title: Hugging Face model loaded with trust_remote_code=True
+      cwe: ["CWE-829: Inclusion of Functionality from Untrusted Control Sphere"]
+      owasp_llm: ["LLM03:2025"]
+      confidence: HIGH
+      category_override: ai
+    pattern: $F(..., trust_remote_code=True, ...)
+
+  - id: unsafe-model-deserialization
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Loading pickled model/embedding files can execute arbitrary code. Use safetensors, torch.load(weights_only=True),
+      and never set allow_dangerous_deserialization=True on untrusted data.
+    metadata:
+      title: Unsafe deserialization of model or vector-store data
+      cwe: ["CWE-502: Deserialization of Untrusted Data"]
+      owasp_llm: ["LLM03:2025", "LLM04:2025"]
+      confidence: HIGH
+      category_override: ai
+    pattern-either:
+      - pattern: $X.load_local(..., allow_dangerous_deserialization=True, ...)
+      - pattern: torch.load($P)
+      - pattern: torch.load($P, weights_only=False, ...)
+      - pattern: joblib.load(...)
+      - pattern: pickle.load(...)
+      - pattern: pickle.loads(...)
+
+  - id: hf-model-unpinned-revision
+    languages: [python]
+    severity: INFO
+    message: >-
+      Model downloaded from the Hugging Face Hub without a pinned revision; a compromised or changed upstream
+      repo silently changes your model. Pass revision="<commit sha>".
+    metadata:
+      title: Hub model loaded without pinned revision
+      cwe: ["CWE-1357: Reliance on Insufficiently Trustworthy Component"]
+      owasp_llm: ["LLM03:2025"]
+      confidence: LOW
+      category_override: ai
+    patterns:
+      - pattern-either:
+          - pattern: $M.from_pretrained($NAME, ...)
+          - pattern: pipeline(..., model=$NAME, ...)
+      - pattern-not: $M.from_pretrained($NAME, ..., revision=$R, ...)
+      - pattern-not: pipeline(..., revision=$R, ...)
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: ^["'][\w.\-]+/[\w.\-]+["']$
+
+  # ---------------------------------------------------------------- LLM06 Excessive Agency
+  - id: agent-shell-tool
+    languages: [python]
+    severity: WARNING
+    message: >-
+      An LLM agent is given a shell / Python REPL / file-system tool. Combined with prompt injection this gives
+      an attacker code execution. Sandbox the tool, scope its permissions and require human approval.
+    metadata:
+      title: LLM agent has shell or code-execution tool
+      cwe: ["CWE-250: Execution with Unnecessary Privileges"]
+      owasp_llm: ["LLM06:2025"]
+      confidence: MEDIUM
+      category_override: ai
+    pattern-either:
+      - pattern: ShellTool(...)
+      - pattern: PythonREPLTool(...)
+      - pattern: PythonAstREPLTool(...)
+      - pattern: FileManagementToolkit(...)
+      - pattern: create_python_agent(...)
+      - pattern: $F(..., allow_dangerous_code=True, ...)
+      - pattern: $F(..., allow_dangerous_requests=True, ...)
+
+  # ---------------------------------------------------------------- LLM10 Unbounded Consumption
+  - id: llm-call-without-max-tokens
+    languages: [python]
+    severity: INFO
+    message: >-
+      LLM call without an explicit output-token limit. Set max_tokens (and input-length / per-user budgets)
+      to prevent cost and denial-of-service abuse.
+    metadata:
+      title: LLM call without max_tokens limit
+      cwe: ["CWE-770: Allocation of Resources Without Limits"]
+      owasp_llm: ["LLM10:2025"]
+      confidence: LOW
+      category_override: ai
+    patterns:
+      - pattern: $C.chat.completions.create(...)
+      - pattern-not: $C.chat.completions.create(..., max_tokens=$N, ...)
+      - pattern-not: $C.chat.completions.create(..., max_completion_tokens=$N, ...)
+
+  # ---------------------------------------------------------------- LLM02 / LLM07 secrets in prompts
+  - id: secret-in-system-prompt
+    languages: [python, javascript, typescript]
+    severity: WARNING
+    message: >-
+      The system prompt appears to contain credentials or internal secrets. System prompts can be extracted by
+      users; keep secrets out of model context and enforce rules in code.
+    metadata:
+      title: Secret-like value inside a system prompt
+      cwe: ["CWE-200: Exposure of Sensitive Information"]
+      owasp_llm: ["LLM07:2025", "LLM02:2025"]
+      confidence: MEDIUM
+      category_override: ai
+    patterns:
+      - pattern-regex: (?i)(system[_ ]?prompt|"role"\s*:\s*"system"|SYSTEM_MESSAGE)[\s\S]{0,400}(password|api[_ -]?key|secret|token|internal)\s*[:=is]+\s*\S{6,}

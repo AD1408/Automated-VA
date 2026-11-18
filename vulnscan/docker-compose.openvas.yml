@@ -1,0 +1,11 @@
+# Connects the worker to a running Greenbone Community Edition stack (started by scripts/openvas.sh up).
+# Usage: docker compose -f docker-compose.yml -f docker-compose.openvas.yml up -d
+services:
+  worker:
+    volumes:
+      - scan-data:/data
+      - gvmd-socket:/run/gvmd
+volumes:
+  gvmd-socket:
+    external: true
+    name: greenbone-community-edition_gvmd_socket_vol

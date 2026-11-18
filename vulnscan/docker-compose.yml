@@ -1,0 +1,122 @@
+# VulnScan stack.
+#   docker compose up -d --build                       -> API/UI on http://localhost:8000
+#   docker compose --profile targets up -d             -> + Juice Shop, DVWA, demo chatbot (practice targets)
+#   docker compose -f docker-compose.yml -f docker-compose.openvas.yml up -d   -> + OpenVAS integration
+name: vulnscan
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+    args:
+      INSTALL_AI: "${INSTALL_AI:-true}"
+      INSTALL_GARAK: "${INSTALL_GARAK:-false}"
+      INSTALL_PROWLER: "${INSTALL_PROWLER:-false}"
+  image: vulnscan:latest
+  env_file: .env
+  environment:
+    DATA_DIR: /data
+    DATABASE_URL: postgresql+psycopg://vulnscan:${POSTGRES_PASSWORD:-vulnscan}@postgres:5432/vulnscan
+    REDIS_URL: redis://redis:6379/0
+    RUN_MODE: celery
+    ZAP_URL: http://zap:8080
+    OLLAMA_URL: http://ollama:11434
+  volumes:
+    - scan-data:/data
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_started }
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *app
+    container_name: vulnscan-api
+    command: ["uvicorn", "vulnscan.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  worker:
+    <<: *app
+    container_name: vulnscan-worker
+    command: ["celery", "-A", "vulnscan.worker", "worker", "--loglevel", "INFO", "--concurrency", "2"]
+    mem_limit: 8g
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: vulnscan
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vulnscan}
+      POSTGRES_DB: vulnscan
+    volumes: [pg-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vulnscan"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  zap:
+    image: zaproxy/zap-stable:2.16.1
+    command: >
+      zap.sh -daemon -host 0.0.0.0 -port 8080
+      -config api.key=${ZAP_API_KEY:-change-me}
+      -config api.addrs.addr.name=.* -config api.addrs.addr.regex=true
+      -config connection.timeoutInSecs=30
+    environment:
+      _JAVA_OPTIONS: "-Xmx3g"
+    shm_size: 1gb  # headless browser used by the DOM XSS / AJAX spider rules crashes with Docker's 64 MB default
+    mem_limit: 4g
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:0.35.1
+    volumes: [ollama-models:/root/.ollama]
+    mem_limit: 16g
+    restart: unless-stopped
+
+  # one-shot: downloads the LLM_MODEL from .env the first time (several GB)
+  ollama-pull:
+    image: ollama/ollama:0.35.1
+    entrypoint: ["/bin/sh", "-c", "sleep 3; ollama pull ${LLM_MODEL:-gpt-oss:20b}"]
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    depends_on: [ollama]
+    restart: "no"
+
+  # ---------------- practice targets (docker compose --profile targets up -d) ----------------
+  juice-shop:
+    image: bkimminich/juice-shop:v18.0.0
+    profiles: [targets]
+    ports: ["3000:3000"]
+
+  dvwa:
+    image: vulnerables/web-dvwa:latest
+    profiles: [targets]
+    ports: ["8081:80"]
+
+  demo-chat:
+    build: ./demo/chatbot
+    profiles: [targets]
+    environment:
+      MOCK: ${DEMO_CHAT_MOCK:-true}
+      GUARDED: ${DEMO_CHAT_GUARDED:-false}
+      OLLAMA_URL: http://ollama:11434
+      MODEL: ${LLM_MODEL:-gpt-oss:20b}
+    ports: ["8090:8090"]
+
+volumes:
+  scan-data:
+  pg-data:
+  ollama-models:

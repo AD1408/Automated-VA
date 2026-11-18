@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security Report – {{ r.meta.target }}</title>
+<style>
+  @page { size: A4; margin: 16mm 14mm; @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 9px; color: #667085; } }
+  :root { --ink:#101828; --muted:#667085; --line:#e4e7ec; --bg:#f8fafc; --accent:#5b5bd6; }
+  * { box-sizing: border-box; }
+  body { font-family: "Inter", "Segoe UI", "DejaVu Sans", Arial, sans-serif; color: var(--ink); margin: 0; background: #fff; font-size: 13px; line-height: 1.5; }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 32px 24px 64px; }
+  .cover { background: linear-gradient(135deg, #0b1020 0%, #1b1f4b 55%, #3b2a7a 100%); color: #fff; border-radius: 16px; padding: 36px 32px; margin-bottom: 28px; }
+  .cover h1 { margin: 0 0 6px; font-size: 28px; letter-spacing: -0.02em; }
+  .cover .sub { opacity: .8; word-break: break-all; }
+  .meta { display: flex; flex-wrap: wrap; gap: 10px 28px; margin-top: 20px; font-size: 12px; opacity: .9; }
+  .meta b { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; opacity: .7; font-weight: 600; }
+  .risk { display: inline-block; margin-top: 18px; padding: 6px 14px; border-radius: 999px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; font-size: 12px; }
+  h2 { font-size: 18px; margin: 34px 0 12px; padding-bottom: 6px; border-bottom: 2px solid var(--line); }
+  .tiles { display: flex; gap: 12px; flex-wrap: wrap; }
+  .tile { flex: 1 1 120px; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; background: var(--bg); }
+  .tile .n { font-size: 28px; font-weight: 800; }
+  .tile .l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .summary { background: var(--bg); border-left: 4px solid var(--accent); padding: 14px 18px; border-radius: 8px; white-space: pre-line; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr { page-break-inside: avoid; break-inside: avoid; }
+  thead { display: table-header-group; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: var(--bg); }
+  .sev { display: inline-block; min-width: 64px; text-align: center; padding: 2px 8px; border-radius: 999px; color: #fff; font-size: 10.5px; font-weight: 700; text-transform: uppercase; }
+  .pill { display: inline-block; padding: 1px 7px; margin: 1px 2px 1px 0; border-radius: 6px; background: #eef2ff; color: #3538cd; font-size: 10.5px; font-weight: 600; }
+  .pill.llm { background: #fdf2fa; color: #c11574; }
+  .pill.cve { background: #fef3f2; color: #b42318; }
+  .pill.tool { background: #f2f4f7; color: #344054; }
+  .finding { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin: 12px 0; page-break-inside: avoid; }
+  .finding h3 { margin: 0 0 6px; font-size: 14px; display: flex; gap: 10px; align-items: baseline; }
+  .finding .loc { font-family: "JetBrains Mono", Consolas, monospace; font-size: 11.5px; color: var(--muted); word-break: break-all; }
+  .finding pre { background: #0b1020; color: #e4e7ec; padding: 10px 12px; border-radius: 8px; font-size: 11px; white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; }
+  .k { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-top: 10px; }
+  .guidance { background: #f0f9ff; border-radius: 8px; padding: 8px 12px; font-size: 12px; }
+  .guidance p { margin: 4px 0; }
+  .bar { height: 10px; border-radius: 6px; background: var(--line); overflow: hidden; display: flex; }
+  .bar span { display: block; height: 100%; }
+  .muted { color: var(--muted); }
+  .ok { color: #067647; font-weight: 600; } .failed { color: #b42318; font-weight: 600; } .skipped, .not_installed { color: #667085; }
+  .fp { opacity: .6; }
+  .grid2 { display: flex; gap: 16px; flex-wrap: wrap; } .grid2 > div { flex: 1 1 420px; }
+  .cov td.n { font-weight: 700; text-align: center; width: 70px; }
+  footer { margin-top: 40px; font-size: 11px; color: var(--muted); text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  {% set c = r.summary.counts %}
+  <section class="cover">
+    <div style="font-size:12px;letter-spacing:.12em;text-transform:uppercase;opacity:.7">Security Assessment Report</div>
+    <h1>{{ r.meta.target }}</h1>
+    <div class="sub">{{ r.meta.kind | upper }} scan · profile <b>{{ r.meta.profile }}</b> · scan id {{ r.meta.scan_id }}</div>
+    <div class="meta">
+      <div><b>Started</b>{{ r.meta.started_at[:19] | replace("T", " ") }} UTC</div>
+      <div><b>Finished</b>{{ r.meta.finished_at[:19] | replace("T", " ") }} UTC</div>
+      <div><b>Tools run</b>{{ r.summary.tools_ok | length }} of {{ r.summary.tools_total }}</div>
+      <div><b>Open findings</b>{{ r.summary.total_open }}</div>
+    </div>
+    <span class="risk" style="background: {{ sev_colors.get(r.summary.risk, '#067647') }}">Overall risk: {{ r.summary.risk }}</span>
+  </section>
+
+  <h2>1. Executive summary</h2>
+  <div class="summary">{{ r.summary.executive_summary }}</div>
+
+  <h2>2. Findings at a glance</h2>
+  <div class="tiles">
+    {% for s in ["critical","high","medium","low","info"] %}
+    <div class="tile" style="border-top: 4px solid {{ sev_colors[s] }}"><div class="n" style="color: {{ sev_colors[s] }}">{{ c[s] }}</div><div class="l">{{ s }}</div></div>
+    {% endfor %}
+  </div>
+  {% set total = (c.critical + c.high + c.medium + c.low + c.info) or 1 %}
+  <div class="bar" style="margin-top:14px">
+    {% for s in ["critical","high","medium","low","info"] %}<span style="width: {{ 100 * c[s] / total }}%; background: {{ sev_colors[s] }}"></span>{% endfor %}
+  </div>
+  {% if r.summary.likely_false_positives %}<p class="muted">{{ r.summary.likely_false_positives }} additional finding(s) were marked as likely false positives by AI triage and are listed in the appendix.</p>{% endif %}
+
+  <h2>3. OWASP coverage</h2>
+  <div class="grid2">
+    <div>
+      <table class="cov"><tr><th>OWASP Top 10 (2025)</th><th>Findings</th><th>Tested by</th></tr>
+      {% for id, v in r.coverage.items() if id.startswith("A") %}
+        <tr><td><b>{{ id.split(":")[0] }}</b> {{ v.name }}</td>
+          <td class="n">{% if v.findings %}<span class="sev" style="background: {{ sev_colors[v.max_severity] }}; min-width:28px">{{ v.findings }}</span>{% else %}0{% endif %}</td>
+          <td>{% for t in v.tested_by %}<span class="pill tool">{{ t }}</span>{% else %}<span class="muted">not tested</span>{% endfor %}</td></tr>
+      {% endfor %}</table>
+    </div>
+    <div>
+      <table class="cov"><tr><th>OWASP Top 10 for LLM Apps (2025)</th><th>Findings</th><th>Tested by</th></tr>
+      {% for id, v in r.coverage.items() if id.startswith("LLM") %}
+        <tr><td><b>{{ id.split(":")[0] }}</b> {{ v.name }}</td>
+          <td class="n">{% if v.findings %}<span class="sev" style="background: {{ sev_colors[v.max_severity] }}; min-width:28px">{{ v.findings }}</span>{% else %}0{% endif %}</td>
+          <td>{% for t in v.tested_by %}<span class="pill tool">{{ t }}</span>{% else %}<span class="muted">not tested</span>{% endfor %}</td></tr>
+      {% endfor %}</table>
+    </div>
+  </div>
+
+  {% set open_findings = r.findings | selectattr("status", "equalto", "open") | list %}
+  <h2>4. Prioritised findings</h2>
+  {% if open_findings %}
+  <table>
+    <tr><th>#</th><th>Severity</th><th>Finding</th><th>Location</th><th>Mapping</th><th>Tool</th></tr>
+    {% for f in open_findings[:60] %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td><span class="sev" style="background: {{ sev_colors[f.severity] }}">{{ f.severity }}</span>{% if f.kev %}<br><span class="pill cve">CISA KEV</span>{% endif %}</td>
+      <td><a href="#f-{{ f.id }}">{{ f.title }}</a></td>
+      <td class="loc" style="font-family:monospace;font-size:11px;word-break:break-all">{{ f.location.file or f.location.url or f.location.host or f.location.component or f.location.resource or "-" }}{% if f.location.line %}:{{ f.location.line }}{% endif %}</td>
+      <td>{% for o in f.owasp %}<span class="pill">{{ o.split(":")[0] }}</span>{% endfor %}{% for o in f.owasp_llm %}<span class="pill llm">{{ o.split(":")[0] }}</span>{% endfor %}</td>
+      <td>{{ f.sources | join(", ") }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% if open_findings | length > 60 %}<p class="muted">Showing the 60 highest-risk findings in this table; all {{ open_findings | length }} are detailed below.</p>{% endif %}
+  {% else %}<p>No open findings. 🎉</p>{% endif %}
+
+  <h2>5. Finding details</h2>
+  {% for f in open_findings %}
+  <div class="finding" id="f-{{ f.id }}">
+    <h3><span class="sev" style="background: {{ sev_colors[f.severity] }}">{{ f.severity }}</span> {{ f.title }}</h3>
+    <div class="loc">{{ f.location.file or f.location.url or f.location.host or f.location.component or f.location.resource or "" }}{% if f.location.line %}:{{ f.location.line }}{% endif %}{% if f.location.param %} · param <b>{{ f.location.param }}</b>{% endif %}{% if f.location.port %} · port {{ f.location.port }}{% endif %}{% if f.location.version %} · {{ f.location.version }}{% endif %}</div>
+    <div style="margin-top:6px">
+      {% for o in f.owasp %}<span class="pill">{{ o }}</span>{% endfor %}{% for o in f.owasp_llm %}<span class="pill llm">{{ o }}</span>{% endfor %}
+      {% for w in f.cwe %}<span class="pill tool">{{ w }}</span>{% endfor %}{% for v in f.cve[:6] %}<span class="pill cve">{{ v }}</span>{% endfor %}
+      <span class="pill tool">confidence: {{ f.confidence }}</span>{% for s in f.sources %}<span class="pill tool">{{ s }}</span>{% endfor %}
+      {% if f.cvss %}<span class="pill cve">CVSS {{ f.cvss }}</span>{% endif %}{% if f.epss %}<span class="pill cve">EPSS {{ "%.1f" | format(f.epss * 100) }}%</span>{% endif %}
+    </div>
+    {% if f.description %}<div class="k">Description</div><div>{{ f.description[:2500] }}</div>{% endif %}
+    {% if f.evidence %}<div class="k">Evidence</div><pre>{{ f.evidence }}</pre>{% endif %}
+    {% if f.remediation or f.fixed_version %}<div class="k">Remediation</div><div>{{ f.remediation }}{% if f.fixed_version and f.fixed_version not in (f.remediation or "") %} Fixed in: {{ f.fixed_version }}.{% endif %}</div>{% endif %}
+    {% if f.guidance %}<div class="k">Guidance (knowledge base)</div><div class="guidance">{{ f.guidance | md }}</div>{% endif %}
+    {% if f.triage_note %}<div class="k">AI triage note</div><div class="muted">{{ f.triage_note }}</div>{% endif %}
+    {% if f.references %}<div class="k">References</div><div style="font-size:11px;word-break:break-all">{% for u in f.references[:5] %}<a href="{{ u }}">{{ u }}</a><br>{% endfor %}</div>{% endif %}
+  </div>
+  {% endfor %}
+
+  <h2>6. Methodology &amp; tool runs</h2>
+  <p class="muted">Each tool's output was normalised into a common schema, de-duplicated across tools, mapped to CWE and OWASP categories, enriched with EPSS and CISA KEV data where CVEs were present, and triaged.</p>
+  <table>
+    <tr><th>Tool</th><th>Status</th><th>Findings</th><th>Duration</th><th>Notes</th></tr>
+    {% for t in r.tool_runs | sort(attribute="tool") %}
+    <tr><td><b>{{ t.tool }}</b></td><td class="{{ t.status }}">{{ t.status | replace("_", " ") }}</td><td>{{ t.findings }}</td><td>{{ t.duration_s }}s</td><td class="muted">{{ t.reason }}</td></tr>
+    {% endfor %}
+  </table>
+
+  <h2>7. Target profile</h2>
+  <table>
+    {% for k, v in r.recon.items() if v not in (None, [], {}, "") and k not in ("services",) %}
+    <tr><th style="width:180px">{{ k | replace("_", " ") }}</th><td style="word-break:break-all">{% if v is mapping %}{{ v | dictsort | map("join", ": ") | join(", ") }}{% elif v is iterable and v is not string %}{{ v[:30] | join(", ") }}{% else %}{{ v }}{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  {% if r.recon.services %}
+  <div class="k">Discovered services</div>
+  <table><tr><th>Host</th><th>Port</th><th>Service</th><th>Product</th></tr>
+  {% for s in r.recon.services %}<tr><td>{{ s.host }}</td><td>{{ s.port }}/{{ s.proto }}</td><td>{{ s.service }}</td><td>{{ s.product }}</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+
+  {% set fps = r.findings | selectattr("status", "equalto", "likely_false_positive") | list %}
+  {% if fps %}
+  <h2>Appendix: likely false positives</h2>
+  <table><tr><th>Severity</th><th>Finding</th><th>Location</th><th>Triage note</th></tr>
+  {% for f in fps %}<tr class="fp"><td>{{ f.severity }}</td><td>{{ f.title }}</td><td>{{ f.location.file or f.location.url or "-" }}</td><td>{{ f.triage_note }}</td></tr>{% endfor %}
+  </table>
+  {% endif %}
+
+  <footer>Generated by VulnScan {{ version }} · Results reflect automated testing at the time of the scan and do not guarantee the absence of other vulnerabilities.</footer>
+</div>
+</body>
+</html>

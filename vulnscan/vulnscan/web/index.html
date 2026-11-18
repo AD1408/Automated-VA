@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VulnScan</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 4 7v8c0 7.5 5.1 13.6 12 15 6.9-1.4 12-7.5 12-15V7z' fill='%237c5cff'/%3E%3C/svg%3E">
+</head>
+<body>
+  <!-- cyber boot / loading screen -->
+  <div id="boot" aria-hidden="true">
+    <div class="boot-grid"></div>
+    <div class="boot-core">
+      <svg class="boot-logo" viewBox="0 0 32 32">
+        <defs><linearGradient id="blg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c5cff"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs>
+        <path d="M16 2 4 7v8c0 7.5 5.1 13.6 12 15 6.9-1.4 12-7.5 12-15V7z" fill="none" stroke="url(#blg)" stroke-width="1.4"/>
+        <path class="boot-shield" d="M16 2 4 7v8c0 7.5 5.1 13.6 12 15 6.9-1.4 12-7.5 12-15V7z" fill="url(#blg)" opacity=".12"/>
+        <path class="boot-check" d="m10.5 16 4 4 7-8" fill="none" stroke="#9affff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div class="boot-title">VULN<span>SCAN</span></div>
+      <div class="boot-sub">security intelligence engine</div>
+      <div class="boot-bar"><i></i></div>
+      <pre class="boot-log" id="bootLog"></pre>
+    </div>
+  </div>
+
+  <canvas id="bg" aria-hidden="true"></canvas>
+  <div class="scanlines" aria-hidden="true"></div>
+  <div class="grid-overlay" aria-hidden="true"></div>
+  <div class="glow g1" aria-hidden="true"></div>
+  <div class="glow g2" aria-hidden="true"></div>
+  <canvas id="fx" aria-hidden="true"></canvas>
+
+  <header class="topbar">
+    <a class="brand" href="#/">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+        <defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c5cff"/><stop offset="1" stop-color="#22d3ee"/></linearGradient></defs>
+        <path d="M16 2 4 7v8c0 7.5 5.1 13.6 12 15 6.9-1.4 12-7.5 12-15V7z" fill="url(#lg)"/>
+        <path class="logo-check" d="m10.5 16 4 4 7-8" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>Vuln<b>Scan</b></span>
+    </a>
+    <nav>
+      <a href="#/" data-nav="new">New scan</a>
+      <a href="#/audit" data-nav="audit">Audit</a>
+      <a href="#/history" data-nav="history">History</a>
+      <a href="#/tools" data-nav="tools">Tools &amp; scope</a>
+    </nav>
+    <div class="status-chip" id="llmChip" title="LLM status"><span class="dot"></span><span class="txt">checking…</span></div>
+  </header>
+
+  <!-- in-app AI assistant -->
+  <button id="assistBtn" class="assist-fab" aria-label="Open assistant" title="Ask the security assistant">
+    <span class="assist-ico">✦</span><span class="assist-label">Ask AI</span>
+  </button>
+  <section id="assistant" class="assistant" aria-hidden="true">
+    <div class="assist-head">
+      <div><b>VulnGuard</b><span class="muted" id="assistSub">security &amp; audit assistant</span></div>
+      <button class="icon-btn" id="assistClose" aria-label="Close">✕</button>
+    </div>
+    <div class="assist-log" id="assistLog"></div>
+    <form class="assist-input" id="assistForm">
+      <input id="assistText" placeholder="Ask about a finding, a fix, or compliance…" autocomplete="off">
+      <button class="btn primary" type="submit" id="assistSend">Send</button>
+    </form>
+  </section>
+
+  <main id="view" tabindex="-1"></main>
+
+  <aside class="drawer" id="drawer" aria-hidden="true">
+    <div class="drawer-inner">
+      <button class="icon-btn drawer-close" id="drawerClose" aria-label="Close details">✕</button>
+      <div id="drawerBody"></div>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="/static/app.js" type="module"></script>
+</body>
+</html>
